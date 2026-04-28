@@ -9,7 +9,7 @@ SYMBOL = "ETH_USDT"
 BARK_URL = "https://api.day.app/gbRTde9uu3C8AwZBqorEj8/时效性通知?level=timeSensitive"
 INTERVALS = ["15m", "1h", "4h"]
 RSI_PERIOD = 14
-THRESHOLDS_LOW = [100, 90, 80]
+THRESHOLDS_LOW = [30, 20, 10]
 THRESHOLDS_HIGH = [70, 80, 90]
 
 def calculate_rsi(prices, period=14):
