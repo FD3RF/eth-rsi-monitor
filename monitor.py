@@ -3,6 +3,7 @@ import requests
 import pandas as pd
 import numpy as np
 from datetime import datetime, timezone
+import os
 
 # 配置信息
 SYMBOL = "ETH_USDT"
@@ -19,7 +20,7 @@ def calculate_rsi(prices, period=14):
     seed = deltas[:period+1]
     up = seed[seed >= 0].sum() / period
     down = -seed[seed < 0].sum() / period
-    if down == 0: return 100
+    if down == 0: return np.array([100.0] * len(prices))
     rs = up / down
     rsi = np.zeros_like(prices)
     rsi[:period] = 100. - 100. / (1. + rs)
@@ -38,28 +39,18 @@ def calculate_rsi(prices, period=14):
     return rsi
 
 def get_gate_data(symbol, interval):
-    # 获取K线数据
     kline_url = "https://api.gateio.ws/api/v4/spot/candlesticks"
     params = {"currency_pair": symbol, "interval": interval, "limit": 100}
-    
-    # 获取24h涨跌数据
     ticker_url = "https://api.gateio.ws/api/v4/spot/tickers"
     ticker_params = {"currency_pair": symbol}
     
     try:
         k_resp = requests.get(kline_url, params=params, timeout=10).json()
         t_resp = requests.get(ticker_url, params=ticker_params, timeout=10).json()
-        
         closes = [float(item[2]) for item in k_resp]
         times = [int(item[0]) for item in k_resp]
         change_24h = float(t_resp[0]['change_percentage']) if t_resp else 0.0
-        
-        return {
-            "closes": closes,
-            "times": times,
-            "change_24h": change_24h,
-            "current_price": closes[-1]
-        }
+        return {"closes": closes, "times": times, "change_24h": change_24h, "current_price": closes[-1]}
     except Exception as e:
         print(f"获取数据失败: {e}")
         return None
@@ -70,11 +61,13 @@ def send_bark_notification(title, body):
     safe_body = urllib.parse.quote(body)
     full_url = f"{BARK_URL}&title={safe_title}&body={safe_body}"
     try:
-        requests.get(full_url, timeout=10)
+        r = requests.get(full_url, timeout=10)
+        print(f"Bark 响应: {r.status_code}")
     except Exception as e:
         print(f"推送失败: {e}")
 
 def check_and_notify():
+    print(f"--- 开始检查 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
     for interval in INTERVALS:
         data = get_gate_data(SYMBOL, interval)
         if not data: continue
@@ -84,26 +77,21 @@ def check_and_notify():
         
         current_rsi = rsi_series[-1]
         prev_rsi = rsi_series[-2]
+        print(f"周期: {interval}, 当前 RSI: {current_rsi:.2f}, 前值: {prev_rsi:.2f}")
+        
         trend = "向上 ↑" if current_rsi > prev_rsi else "向下 ↓"
-        trend_icon = "🚨" if current_rsi > 70 else "⚠️" if current_rsi < 30 else ""
-        
-        if not trend_icon: continue # 未触发任何阈值
-        
-        # 检查触发档位
-        low_checks = [f"<{t} {'✅' if current_rsi < t else '❌'}" for t in [30, 20, 10]]
-        high_checks = [f">{t} {'✅' if current_rsi > t else '❌'}" for t in [70, 80, 90]]
-        
         is_low = any(current_rsi < t for t in THRESHOLDS_LOW)
         is_high = any(current_rsi > t for t in THRESHOLDS_HIGH)
         
         if is_low or is_high:
+            trend_icon = "🚨" if (current_rsi > 80 or current_rsi < 20) else "⚠️"
             type_str = "超卖" if is_low else "超买"
             op = "<" if is_low else ">"
             target_t = next((t for t in (THRESHOLDS_LOW if is_low else THRESHOLDS_HIGH[::-1]) if (current_rsi < t if is_low else current_rsi > t)), 30 if is_low else 70)
             
             title = f"{trend_icon} ETH {interval} RSI {type_str} {op} {target_t}"
-            
-            # 格式化时间
+            low_checks = [f"<{t} {'✅' if current_rsi < t else '❌'}" for t in [30, 20, 10]]
+            high_checks = [f">{t} {'✅' if current_rsi > t else '❌'}" for t in [70, 80, 90]]
             last_k_time = datetime.fromtimestamp(data['times'][-1], tz=timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
             
             body = (
@@ -114,9 +102,9 @@ def check_and_notify():
                 f"24h 涨跌: {data['change_24h']:+.2f}%\n"
                 f"数据源: Gate.io ETH_USDT 永续"
             )
-            
-            print(f"触发通知:\n{title}\n{body}")
+            print(f"触发通知: {title}")
             send_bark_notification(title, body)
+    print("--- 检查结束 ---")
 
 if __name__ == "__main__":
     check_and_notify()
