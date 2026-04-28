@@ -78,6 +78,8 @@ def check_and_notify():
         current_rsi = rsi_series[-1]
         prev_rsi = rsi_series[-2]
         print(f"周期: {interval}, 当前 RSI: {current_rsi:.2f}, 前值: {prev_rsi:.2f}")
+        # 强制打印所有周期的状态，方便排查
+        print(f"DEBUG: {interval} 状态 - is_low: {is_low}, is_high: {is_high}")
         
         trend = "向上 ↑" if current_rsi > prev_rsi else "向下 ↓"
         is_low = any(current_rsi < t for t in THRESHOLDS_LOW)
