@@ -1,0 +1,26 @@
+# 日志文件
+*.log
+v7_output.log
+
+# 部署脚本
+deploy_*.py
+deploy_*.bat
+
+# 回测数据
+backtest_*.txt
+winrate_out.txt
+
+# 报告
+ETH_RSI_*.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 记忆文件
+.workbuddy/
