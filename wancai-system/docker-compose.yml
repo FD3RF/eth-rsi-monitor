@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+
+  wangcai:
+    build: ./wangcai
+    container_name: wangcai_core
+    restart: always
+    env_file: .env
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - ai_analyst
+    networks:
+      - wancai-net
+
+  ai_analyst:
+    build: ./ai-analyst
+    container_name: ai_analyst
+    restart: always
+    env_file: .env
+    ports:
+      - "5051:5051"
+    networks:
+      - wancai-net
+
+  gateway:
+    build: ./gateway
+    container_name: gateway
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      - wangcai
+      - ai_analyst
+    networks:
+      - wancai-net
+
+  claude_agent:
+    build: ./claude-agent
+    container_name: claude_agent
+    restart: always
+    command: bash claude-agent/runner.sh
+    volumes:
+      - ./:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file: .env
+    networks:
+      - wancai-net
+
+networks:
+  wancai-net:
+    driver: bridge
+
