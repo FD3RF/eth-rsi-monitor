@@ -1,0 +1,14 @@
+[Unit]
+Description=ETH RSI Monitor V6.3 - Gate.io Single Source
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/eth_monitor
+ExecStart=/usr/bin/python3 /root/eth_monitor/eth_rsi_v6_3.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Wangcai MTF Signal Service — ETH Trend Rolling
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/eth-mtf-signal
+ExecStart=/usr/bin/python3 /opt/eth-mtf-signal/eth_mtf_signal.py
+Restart=always
+RestartSec=30
+EnvironmentFile=/opt/eth-mtf-signal/.env
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

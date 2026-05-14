@@ -1,0 +1,12 @@
+[Unit]
+Description=Trading Master
+After=network-online.target
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/trading-master
+ExecStart=/usr/bin/python3 /opt/trading-master/trading_master.py
+Restart=always
+RestartSec=10
+[Install]
+WantedBy=multi-user.target
