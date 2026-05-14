@@ -3,18 +3,41 @@
 旺财交易大师 — 双Key自动切换
 独立系统，不碰旺财决策层。
 Telegram发 /master <问题> 触发分析。
+
+连接策略：
+- 短轮询+指数退避避免长连接被GFW断连
+- Telegram出站(sendMessage)入站(getUpdates)均正常
+- 支持HTTPS_PROXY环境变量代理
 """
 import json, requests, time, os, threading
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from trading_master_tools import get_market_context, save_analysis, get_recent_analyses, search_web, save_memory, get_memory_context, write_script, run_script, list_scripts, generate_chart
 from claude_wrapper import ask as call_llm
 
-# ── Telegram（香港ECS直连） ──
+# ── Telegram（香港ECS直连/短轮询） ──
 TG_TOKEN = "8640664409:AAHPZIZd1YGa6jCwXziM01qoJ0RJwCfG-LM"
 CHAT_ID = "8410098965"
 BARK_KEY = "gbRTde9uu3C8AwZBqorEj8"
 OFFSET_FILE = "/opt/trading-master/offset.txt"
 
+# 代理配置（自动读取环境变量，可设HTTPS_PROXY=socks5://127.0.0.1:1080）
+PROXIES = {}
+for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY"):
+    v = os.environ.get(k)
+    if v:
+        PROXIES[k.lower()] = v
+
 os.makedirs("/opt/trading-master", exist_ok=True)
+
+# TCP连接池：短连接+关闭长轮询避免GFW断连
+TG_SESSION = requests.Session()
+TG_SESSION.mount("https://", HTTPAdapter(
+    pool_connections=1, pool_maxsize=1, max_retries=0
+))
+TG_SESSION.mount("http://", HTTPAdapter(
+    pool_connections=1, pool_maxsize=1, max_retries=0
+))
 
 MASTER_SYSTEM = """你是旺财交易大师，20年华尔街交易经验，全能交易助手。
 风格：犀利、简洁、直击要害。
@@ -70,15 +93,17 @@ def call_master(question):
 def push(msg):
     for _ in range(2):
         try:
-            requests.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
-                          json={"chat_id": CHAT_ID, "text": msg[:2000]}, timeout=15)
-            requests.post("https://api.day.app/push",
-                          json={"device_key": BARK_KEY, "title": "🧠交易大师",
-                                "body": msg[:200], "group": "交易大师"}, timeout=8)
+            TG_SESSION.post(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage",
+                            json={"chat_id": CHAT_ID, "text": msg[:2000]},
+                            timeout=15, proxies=PROXIES or None)
+            TG_SESSION.post("https://api.day.app/push",
+                            json={"device_key": BARK_KEY, "title": "🧠交易大师",
+                                  "body": msg[:200], "group": "交易大师"}, timeout=8)
             return
         except: time.sleep(1)
 
 def poll():
+    """短轮询获取Telegram消息，避免长连接被中断"""
     offset = 0
     try:
         with open(OFFSET_FILE) as f: offset = int(f.read().strip())
@@ -86,32 +111,60 @@ def poll():
 
     push("🧠 旺财交易大师上线\n/master <问题> 即可提问")
 
+    backoff = 1  # 首次失败等待1s
+    max_backoff = 30  # 最大30s
+    empty_poll_count = 0  # 连续空轮询计数（用于缩短间隔）
+
     while True:
         try:
-            r = requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/getUpdates",
-                             params={"offset": offset+1, "timeout": 30}, timeout=35)
-            if r.status_code != 200: continue
-            for upd in r.json().get("result", []):
+            # ── 短轮询(timeout=5)替代长轮询(timeout=30) ──
+            # 短连接被GFW断连的概率远低于长连接
+            r = TG_SESSION.get(
+                f"https://api.telegram.org/bot{TG_TOKEN}/getUpdates",
+                params={"offset": offset+1, "timeout": 5},
+                timeout=10, proxies=PROXIES or None
+            )
+            if r.status_code != 200:
+                print(f"[大师] getUpdates返回{r.status_code}", flush=True)
+                time.sleep(backoff)
+                backoff = min(backoff * 2, max_backoff)
+                continue
+
+            backoff = 1  # 成功即重置退避
+            updates = r.json().get("result", [])
+
+            if not updates:
+                empty_poll_count += 1
+                # 空轮询逐渐增大间隔: 0.5s → 1s → 2s → 3s(max)
+                sleep_gap = min(0.5 * (1 + empty_poll_count * 0.3), 3.0)
+                time.sleep(sleep_gap)
+                continue
+
+            empty_poll_count = 0  # 有消息时立即恢复快扫
+            for upd in updates:
                 offset = max(offset, upd["update_id"])
                 msg = upd.get("message", {}).get("text", "")
                 cid = upd.get("message", {}).get("chat", {}).get("id")
                 if not msg or str(cid) != CHAT_ID: continue
-                
+
                 # 命令保留，其余全部走大师
                 if msg in ("/start", "/eth", "/liq", "/signal", "/stats", "/regime", "/save"):
                     with open(OFFSET_FILE, "w") as f: f.write(str(offset))
-                    continue  # 这些命令让旺财处理
-                
+                    continue
+
                 # 去掉 /master 前缀即可
                 question = msg[8:] if msg.startswith("/master ") else msg
                 push(f"🧠 交易大师分析中... ({time.strftime('%H:%M')})")
                 ans = call_master(question)
                 push(f"🧠 交易大师\n\n{ans}")
                 with open(OFFSET_FILE, "w") as f: f.write(str(offset))
+
             with open(OFFSET_FILE, "w") as f: f.write(str(offset))
+
         except Exception as e:
-            print(f"[大师] {e}", flush=True)
-        time.sleep(1)
+            print(f"[大师] 连接异常({backoff}s后重试): {e}", flush=True)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, max_backoff)
 
 def web_health():
     from http.server import HTTPServer, BaseHTTPRequestHandler
