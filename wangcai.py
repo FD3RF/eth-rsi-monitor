@@ -33,6 +33,7 @@ L = 0; M = []; X = {}; ST = {"t":0,"w":0,"l":0,"p":0,"s":0}
 SL = {}  # 信号冷却
 SIG_LAST = ""; SIG_TIME = 0  # 上次推送的信号
 LAST_PUSH_TIME = time.time()  # 上次任何推送的时间（用于静默简报）
+POS = {"direction": "", "entry": 0, "leverage": 0, "size": 0, "time": 0, "pnl": 0}  # 持仓追踪
 
 # ══════════════════════════════════════════════════════════════
 # 工具函数
@@ -56,15 +57,31 @@ def push(t, b=""):
             time.sleep(0.5)
 
 def kl(iv, lim):
-    try:
-        r = requests.get(f"{GA}/candlesticks",
-                         params={"contract": "ETH_USDT", "interval": iv, "limit": lim},
-                         timeout=8)
-        if r.status_code != 200: return []
-        d = r.json(); d.reverse()
-        return [{"c": float(x["c"]), "h": float(x["h"]), "l": float(x["l"]), "v": float(x["v"])} for x in d]
-    except:
-        return []
+    """多源K线获取：Gate.io → Binance → OKX 自动降级"""
+    sources = [
+        {"name": "Gate.io", "url": f"{GA}/candlesticks",
+         "params": {"contract": "ETH_USDT", "interval": iv, "limit": lim},
+         "parse": lambda d: [{"c": float(x["c"]), "h": float(x["h"]), "l": float(x["l"]), "v": float(x["v"])} for x in (d.reverse() or d)]},
+        {"name": "Binance", "url": "https://fapi.binance.com/fapi/v1/klines",
+         "params": {"symbol": "ETHUSDT", "interval": iv, "limit": lim},
+         "parse": lambda d: [{"c": float(x[4]), "h": float(x[2]), "l": float(x[3]), "v": float(x[5])} for x in d]},
+        {"name": "OKX", "url": "https://www.okx.com/api/v5/market/candles",
+         "params": {"instId": "ETH-USDT-SWAP", "bar": iv.replace("4h","4H").replace("15m","15m"), "limit": str(lim)},
+         "parse": lambda d: [{"c": float(x[4]), "h": float(x[2]), "l": float(x[3]), "v": float(x[5])} for x in d.get("data",[])]},
+    ]
+    for src in sources:
+        try:
+            r = requests.get(src["url"], params=src["params"], timeout=8)
+            if r.status_code != 200: continue
+            data = r.json()
+            if not data: continue
+            bars = src["parse"](data)
+            if len(bars) >= lim * 0.5:
+                return bars
+        except:
+            continue
+    log("⚠️ K线获取失败: 所有数据源均不可用")
+    return []
 
 def ema(d, p):
     if len(d) < p: return None
@@ -82,12 +99,22 @@ def rsi(d, p=14):
     return 100 - 100 / (1 + (g / p) / (l / p)) if l > 0 else 100
 
 def price():
-    try:
-        r = requests.get(f"{GA}/tickers?contract=ETH_USDT", timeout=8)
-        if r.status_code == 200:
-            d = r.json()[0]
-            return float(d["last"]), float(d["volume_24h"]), float(d["low_24h"]), float(d["high_24h"])
-    except: pass
+    """多源价格获取：Gate.io → Binance → OKX"""
+    sources = [
+        ("Gate.io", f"{GA}/tickers", {"contract": "ETH_USDT"},
+         lambda d: (float(d[0]["last"]), float(d[0]["volume_24h"]), float(d[0]["low_24h"]), float(d[0]["high_24h"]))),
+        ("Binance", "https://fapi.binance.com/fapi/v1/ticker/24hr", {"symbol": "ETHUSDT"},
+         lambda d: (float(d["lastPrice"]), float(d["volume"]), float(d["lowPrice"]), float(d["highPrice"]))),
+        ("OKX", "https://www.okx.com/api/v5/market/ticker", {"instId": "ETH-USDT-SWAP"},
+         lambda d: (float(d["data"][0]["last"]), float(d["data"][0]["volCcy24h"]), float(d["data"][0]["low24h"]), float(d["data"][0]["high24h"]))),
+    ]
+    for name, url, params, parse in sources:
+        try:
+            r = requests.get(url, params=params, timeout=8)
+            if r.status_code == 200:
+                return parse(r.json())
+        except: pass
+    log("⚠️ 价格获取失败: 所有数据源均不可用")
     return 0, 0, 0, 0
 
 def liq():
@@ -526,7 +553,7 @@ def build_silent_report(m15: list) -> dict | None:
 # ══════════════════════════════════════════════════════════════
 
 def push_signal(sig: dict):
-    """格式化推送级联信号"""
+    """格式化推送级联信号（含持仓冲突检测）"""
     emoji_map = {"LONG": "🟢", "SHORT": "🔴", "EXIT": "⚪", "WATCH_LONG": "🟡", "WATCH_SHORT": "🟡", "INFO": "ℹ️"}
     layer_label = {"1": "主趋势", "2": "结构信号", "3": "微型趋势", "4": "超买/超卖", "5": "市场简报"}
     emoji = emoji_map.get(sig["direction"], "⚪")
@@ -538,12 +565,20 @@ def push_signal(sig: dict):
     if layer <= 4:
         title += f" L{layer}"
 
+    # 持仓冲突检测
+    conflict_warn = ""
+    if POS["direction"] and sig["direction"] in ("LONG", "SHORT"):
+        if POS["direction"] == "LONG" and sig["direction"] == "SHORT":
+            conflict_warn = "\n\n⚠️ 你持多单，当前信号偏空！"
+        elif POS["direction"] == "SHORT" and sig["direction"] == "LONG":
+            conflict_warn = "\n\n⚠️ 你持空单，当前信号偏多！"
+
     body = (f"{label}\n"
-            f"{sig['reason']}")
+            f"{sig['reason']}{conflict_warn}")
 
     push(title, body)
     conf = sig.get("confidence", 0)
-    log(f"PUSH L{layer}:{type_cn} {sig['direction']} conf={conf:.0%} @${sig['price']:.0f}")
+    log(f"PUSH L{layer}:{type_cn} {sig['direction']} conf={conf:.0%} @${sig['price']:.0f}{' ⚔️冲突' if conflict_warn else ''}")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -595,7 +630,7 @@ def handle():
             if not txt or str(cid) != TC: continue
             log(f"cmd:{txt[:30]}")
             if txt == "/start":
-                push("旺财MTF v5级联\n/eth /liq /signal /arbiter /stats /regime\n直接聊=AI分析", "")
+                push("旺财MTF v5级联\n/eth /liq /signal /arbiter /stats /regime /pos\n直接聊=AI分析", "")
             elif txt == "/eth":
                 p, v, lo, hi = price()
                 push(f"ETH ${p:.0f} 24h${hi:.0f}~${lo:.0f}", "") if p else push("失败", "")
@@ -628,6 +663,26 @@ def handle():
                            f"  量能:{mqd.get('volume_quality',0):.2f} 结构:{mqd.get('structure_clarity',0):.2f}\n"
                            f"{arb['reason']}")
                     push(msg, "")
+            elif txt.startswith("/pos"):
+                parts = txt.split()
+                if len(parts) >= 2:
+                    POS["direction"] = parts[1].upper()
+                    POS["entry"] = float(parts[2]) if len(parts) > 2 else 0
+                    POS["leverage"] = float(parts[3].replace("x","")) if len(parts) > 3 else 0
+                    POS["size"] = float(parts[4]) if len(parts) > 4 else 0
+                    POS["time"] = time.time()
+                    push(f"持仓已记录: {POS['direction']} {POS['leverage']}x ${POS['entry']:.0f}", "")
+                elif txt == "/pos":
+                    if POS["direction"]:
+                        p = price()[0]
+                        if POS["direction"] == "LONG": pl = (p - POS["entry"]) / POS["entry"] * POS["leverage"] * 100 if POS["entry"] else 0
+                        else: pl = (POS["entry"] - p) / POS["entry"] * POS["leverage"] * 100 if POS["entry"] else 0
+                        push(f"持仓: {POS['direction']} {POS['leverage']}x\n开仓: ${POS['entry']:.0f} 当前: ${p:.0f}\n浮盈: {pl:+.1f}%", "")
+                    else:
+                        push("未记录持仓。用法: /pos SHORT 100x 2310 84USDT", "")
+                elif txt == "/pos clear":
+                    POS = {"direction": "", "entry": 0, "leverage": 0, "size": 0, "time": 0, "pnl": 0}
+                    push("持仓已清除", "")
             elif txt == "/stats":
                 push(f"旺财 总{ST['t']} 胜{ST['w']} 负{ST['l']} 率{ST['p']}%/{ST['s']}连胜", "")
             elif txt == "/regime":
@@ -686,7 +741,7 @@ def main():
     ST["p"] = round(ST["w"] / max(ST["t"], 1) * 100, 1)
     LAST_PUSH_TIME = time.time()  # 初始化
     log(f"旺财MTF v5上线 历史{ST['t']}单 胜率{ST['p']}%")
-    log(f"架构: 五层级联信号（主趋势→结构→微结构→超买超卖→简报）")
+    log(f"架构: 五层级联+多源+持仓追踪")
     if not os.path.exists("/root/trading_log.md"):
         with open("/root/trading_log.md", "w") as f: f.write("# 复盘\n")
 
