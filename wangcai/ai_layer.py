@@ -42,6 +42,9 @@ import json
 # ===================== API配置 =====================
 API_KEY = "sk-eevlkxrnmfgtoxyijmftmcexvqrdkjkokmhszpiebjfwhgvm"
 API_URL = "https://api.siliconflow.cn/v1/chat/completions"
+BACKUP_KEY = "sk-b2f5c0f817514e5bbf7ac7c4622f52e5"
+BACKUP_URL = "https://api.deepseek.com/chat/completions"
+BACKUP_MODEL = "deepseek-v4-flash"
 
 # ===================== 角色定义 =====================
 # ⚠️ v7.5.1: 更严格的系统提示，禁止读原始数据
@@ -238,7 +241,7 @@ def think(prompt: str, timeout: int = 25) -> str:
             r = requests.post(
                 API_URL,
                 json={
-                    "model": "deepseek-v4-pro",
+                    "model": "deepseek-ai/DeepSeek-V4-Flash",
                     "messages": messages,
                     "max_tokens": 300
                 },
@@ -246,7 +249,21 @@ def think(prompt: str, timeout: int = 25) -> str:
                 timeout=timeout
             )
             if r.status_code != 200:
-                continue
+                # 配额用完 -> 切备份
+                if r.status_code in (402, 429) or "quota" in r.text.lower() or "insufficient" in r.text.lower():
+                    print("[ai_layer] 硅基额度用完，切到DeepSeek备份")
+                    r = requests.post(
+                        BACKUP_URL,
+                        json={"model": BACKUP_MODEL, "messages": messages, "max_tokens": 300},
+                        headers={"Authorization": f"Bearer {BACKUP_KEY}"},
+                        timeout=timeout
+                    )
+                    if r.status_code == 200:
+                        msg = r.json()["choices"][0]["message"]
+                        content = msg.get("content", "").strip()
+                        if not _has_contradiction(content, prompt):
+                            return content
+                    continue
 
             msg = r.json()["choices"][0]["message"]
             content = msg.get("content", "").strip()

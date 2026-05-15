@@ -320,7 +320,8 @@ def ask_agent(prompt):
     messages = [{"role":"system","content":SYSTEM_PROMPT},{"role":"user","content":prompt}]
     
     backends = [
-        (("SiliconFlow", BAILIAN_URL, BAILIAN_KEY, "deepseek-ai/DeepSeek-V4-Flash")),
+        ("SiliconFlow", BAILIAN_URL, BAILIAN_KEY, "deepseek-ai/DeepSeek-V4-Flash"),
+        ("DeepSeek", "https://api.deepseek.com/chat/completions", "sk-b2f5c0f817514e5bbf7ac7c4622f52e5", "deepseek-v4-flash"),
     ]
     
     for name, url, key, model in backends:
@@ -331,6 +332,10 @@ def ask_agent(prompt):
                 r = requests.post(url, json=data, headers={"Authorization":"Bearer %s"%key,"Content-Type":"application/json"}, timeout=60)
                 if r.status_code != 200:
                     log("%s fail %d" % (name, r.status_code))
+                    # 配额用完 -> 不重试，直接切下一个backend
+                    if r.status_code in (402, 429) or "insufficient" in r.text.lower() or "quota" in r.text.lower():
+                        log("%s 额度用完，切到下一个" % name)
+                        break
                     continue
                 j = r.json()
                 msg = j["choices"][0]["message"]
