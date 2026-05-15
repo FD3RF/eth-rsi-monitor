@@ -101,6 +101,19 @@ def liq():
     except: return {}
 
 # ══════════════════════════════════════════════════════════════
+# MTF 信号中文映射
+SIGNAL_CN = {
+    "STRUCTURE_BROKEN": "结构破坏",
+    "HH_BREAKOUT": "HH突破",
+    "HL_RETEST": "HL回测",
+    "LL_BREAKOUT": "LL突破",
+    "LH_RETEST": "LH回测",
+    "CHOP": "震荡",
+    "EXIT": "退出",
+    "LONG": "做多",
+    "SHORT": "做空",
+}
+
 # MTF 结构决策引擎
 # ══════════════════════════════════════════════════════════════
 
@@ -378,17 +391,17 @@ def arbitrate(m15: list, h1_data: list = None) -> dict:
     if struct["type"] == "UPTREND":
         if struct["structure_hold"]:
             struct_score = +2
-            struct_note = f"UPTREND_HOLD(HL={struct['last_HL']:.0f})"
+            struct_note = f"上升结构保持(HL={struct['last_HL']:.0f})"
         else:
             struct_score = 0
-            struct_note = f"STRUCTURE_BROKEN(HL跌破={struct['last_HL']:.0f})"
+            struct_note = f"结构破坏(HL跌破={struct['last_HL']:.0f})"
     elif struct["type"] == "DOWNTREND":
         if struct["structure_hold"]:
             struct_score = -2
-            struct_note = f"DOWNTREND_HOLD(LH={struct['last_HH']:.0f})"
+            struct_note = f"下降结构保持(LH={struct['last_HH']:.0f})"
         else:
             struct_score = 0
-            struct_note = f"STRUCTURE_BROKEN(LH突破={struct['last_HH']:.0f})"
+            struct_note = f"结构破坏(LH突破={struct['last_HH']:.0f})"
     score += struct_score
     details["1H_Structure"] = {"value": struct_note, "score": struct_score}
 
@@ -398,17 +411,17 @@ def arbitrate(m15: list, h1_data: list = None) -> dict:
     if regime == "LONG" and struct["type"] == "UPTREND" and struct["structure_hold"]:
         if struct["hh_broken"]:
             entry_score = +1
-            entry_note = f"HH_BREAKOUT({struct['last_HH']:.0f})"
+            entry_note = f"HH突破({struct['last_HH']:.0f})"
         elif cur > struct["last_HL"] and cur < struct["last_HH"] * 0.98:
             entry_score = +0.5
-            entry_note = f"HL_RETEST({struct['last_HL']:.0f})"
+            entry_note = f"HL回测({struct['last_HL']:.0f})"
     elif regime == "SHORT" and struct["type"] == "DOWNTREND" and struct["structure_hold"]:
         if cur < struct["last_HL"]:
             entry_score = -1
-            entry_note = f"LL_BREAKOUT({struct['last_HL']:.0f})"
+            entry_note = f"LL突破({struct['last_HL']:.0f})"
         elif cur > struct["last_HL"] * 1.02 and cur < struct["last_HH"]:
             entry_score = -0.5
-            entry_note = f"LH_RETEST({struct['last_HH']:.0f})"
+            entry_note = f"LH回测({struct['last_HH']:.0f})"
     score += entry_score
     details["15m_Entry"] = {"value": entry_note, "score": entry_score}
 
@@ -661,12 +674,12 @@ def main():
                         mq = sig.get("market_quality", {})
                         mq_state = mq.get("state", "?")
                         conf = sig.get("confidence", 0)
-                        title = f"{emoji} ETH {sig['type']}"
+                        title = f"{emoji} ETH {SIGNAL_CN.get(sig['type'], sig['type'])}"
                         body = (f"{sig['direction']} | 置信{conf:.0%}\n"
                                 f"总评{sig['score']:+d} | 市场:{mq_state}\n"
                                 f"${sig['price']:.0f}\n{sig['reason']}")
                         push(title, body)
-                        log(f"SIG:{sig['type']} {sig['direction']} conf={conf:.0%} mkt={mq_state} @${sig['price']:.0f}")
+                        log(f"SIG:{SIGNAL_CN.get(sig['type'],sig['type'])} {sig['direction']} conf={conf:.0%} mkt={mq_state} @${sig['price']:.0f}")
                         # 记录（含置信度和市场质量）
                         d = sig["direction"]
                         rg = "?"
