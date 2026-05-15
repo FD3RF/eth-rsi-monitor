@@ -40,8 +40,8 @@ import requests
 import json
 
 # ===================== API配置 =====================
-API_KEY = "sk-b2f5c0f817514e5bbf7ac7c4622f52e5"
-API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+API_KEY = "sk-eevlkxrnmfgtoxyijmftmcexvqrdkjkokmhszpiebjfwhgvm"
+API_URL = "https://api.siliconflow.cn/v1/chat/completions"
 
 # ===================== 角色定义 =====================
 # ⚠️ v7.5.1: 更严格的系统提示，禁止读原始数据

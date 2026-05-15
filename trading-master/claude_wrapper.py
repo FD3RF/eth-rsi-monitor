@@ -3,9 +3,9 @@
 import requests, json, os, time
 
 ENDPOINTS = [
-    {"name": "DeepSeek", "key": "sk-b2f5c0f817514e5bbf7ac7c4622f52e5",
-     "url": "https://api.deepseek.com/chat/completions",
-     "model": "deepseek-v4-flash"},
+    {"name": "DeepSeek", "key": "sk-eevlkxrnmfgtoxyijmftmcexvqrdkjkokmhszpiebjfwhgvm",
+     "url": "https://api.siliconflow.cn/v1/chat/completions",
+     "model": "deepseek-ai/DeepSeek-V4-Flash"},
 ]
 
 SWITCH_FILE = "/opt/trading-master/active_key.txt"
