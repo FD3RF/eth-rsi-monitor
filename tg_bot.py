@@ -5,8 +5,8 @@ from datetime import datetime
 
 TG_TOKEN = "8640664409:AAHPZIZd1YGa6jCwXziM01qoJ0RJwCfG-LM"
 TG_CHAT_ID = "8410098965"
-BAILIAN_KEY = "sk-6c0916d82cb84a57b5b76fe5b0107cfd"
-BAILIAN_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+BAILIAN_KEY = "sk-eevlkxrnmfgtoxyijmftmcexvqrdkjkokmhszpiebjfwhgvm"
+BAILIAN_URL = "https://api.siliconflow.cn/v1/chat/completions"
 ZHIPU_KEY = "14fb054920d248bfb4b0f793445db366.nvwsxzMLghC3rXQs"
 ZHIPU_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
 SIGNAL_CSV = "/root/eth_monitor/v8_signals.csv"
@@ -320,7 +320,7 @@ def ask_agent(prompt):
     messages = [{"role":"system","content":SYSTEM_PROMPT},{"role":"user","content":prompt}]
     
     backends = [
-        ("DeepSeek", BAILIAN_URL, BAILIAN_KEY, "deepseek-v4-pro"),
+        (("SiliconFlow", BAILIAN_URL, BAILIAN_KEY, "deepseek-ai/DeepSeek-V4-Flash")),
     ]
     
     for name, url, key, model in backends:

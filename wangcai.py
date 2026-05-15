@@ -18,7 +18,7 @@ import requests, time, json, os
 # ── 配置（与旧版完全兼容） ──────────────────────────────────
 TG = "8640664409:AAHPZIZd1YGa6jCwXziM01qoJ0RJwCfG-LM"
 TC = "8410098965"
-DK = "sk-6c0916d82cb84a57b5b76fe5b0107cfd"
+DK = "sk-eevlkxrnmfgtoxyijmftmcexvqrdkjkokmhszpiebjfwhgvm"
 DU = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 BK = "gbRTde9uu3C8AwZBqorEj8"
 GA = "https://api.gateio.ws/api/v4/futures/usdt"
