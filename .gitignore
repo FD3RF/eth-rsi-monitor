@@ -13,3 +13,7 @@ Thumbs.db
 # 工作区
 .workbuddy/
 server_files/
+
+# 环境变量（含API密钥）
+.env
+.env.*

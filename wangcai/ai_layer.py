@@ -40,7 +40,7 @@ import requests
 import json
 
 # ===================== API配置 =====================
-API_KEY = "sk-eevlkxrnmfgtoxyijmftmcexvqrdkjkokmhszpiebjfwhgvm"
+API_KEY = "sk-b2f5c0f817514e5bbf7ac7c4622f52e5"
 API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
 
 # ===================== 角色定义 =====================
